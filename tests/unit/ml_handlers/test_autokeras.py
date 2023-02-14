@@ -1,6 +1,7 @@
 import time
 from unittest.mock import patch
 import pandas as pd
+import numpy as np
 
 from mindsdb_sql import parse_sql
 
@@ -32,7 +33,7 @@ class TestAutokeras(BaseExecutorTest):
             return pd.DataFrame(ret.data, columns=columns)
 
     @patch("mindsdb.integrations.handlers.postgres_handler.Handler")
-    def test_simple(self, mock_handler):
+    def test_regression_with_numerical_training(self, mock_handler):
 
         # dataset, string values
         df = pd.DataFrame(range(1, 50), columns=["a"])
@@ -59,12 +60,92 @@ class TestAutokeras(BaseExecutorTest):
         # run predict
         ret = self.run_sql(
             """
-           SELECT p.*
-           FROM pg.df as t 
-           JOIN proj.modelx as p
-           where t.c=1
+           SELECT c
+           FROM proj.modelx
+           WHERE a=1
+           AND b=2;
         """
         )
         avg_c = pd.to_numeric(ret.c).mean()
         # value is around 1
         assert (avg_c > -5) and (avg_c < 5)
+
+    @patch("mindsdb.integrations.handlers.postgres_handler.Handler")
+    def test_regression_with_categorical_training(self, mock_handler):
+
+        # dataset, string values
+        df = pd.DataFrame(range(1, 50), columns=["a"])
+        df["b"] = 50 - df.a
+        df["c"] = round((df["a"] * 3 + df["b"]) / 50)
+        df["d"] = np.where(df.index % 2, "even", "odd")
+
+        self.set_handler(mock_handler, name="pg", tables={"df": df})
+
+        # create project
+        self.run_sql("create database proj")
+
+        # create predictor
+        self.run_sql(
+            """
+           create model proj.modelx
+           from pg (select * from df)
+           predict c
+           using 
+             engine='autokeras';
+        """
+        )
+        self.wait_predictor("proj", "modelx")
+
+        # run predict
+        ret = self.run_sql(
+            """
+           SELECT c
+           FROM proj.modelx
+           WHERE a=1
+           AND b=2
+           AND d="odd";
+        """
+        )
+        avg_c = pd.to_numeric(ret.c).mean()
+        # value is around 1
+        assert (avg_c > -5) and (avg_c < 5)
+
+    @patch("mindsdb.integrations.handlers.postgres_handler.Handler")
+    def test_regression_error_on_incomplete_predict_query(self, mock_handler):
+
+        # dataset, string values
+        df = pd.DataFrame(range(1, 50), columns=["a"])
+        df["b"] = 50 - df.a
+        df["c"] = round((df["a"] * 3 + df["b"]) / 50)
+        df["d"] = np.where(df.index % 2, "even", "odd")
+
+        self.set_handler(mock_handler, name="pg", tables={"df": df})
+
+        # create project
+        self.run_sql("create database proj")
+
+        # create predictor
+        self.run_sql(
+            """
+           create model proj.modelx
+           from pg (select * from df)
+           predict c
+           using 
+             engine='autokeras';
+        """
+        )
+        self.wait_predictor("proj", "modelx")
+
+        try:
+            # run predict
+            ret = self.run_sql(
+                """
+            SELECT c
+            FROM proj.modelx
+            WHERE a=1;
+            """
+            )
+            assert False
+        except Exception:
+            assert True
+        

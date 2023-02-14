@@ -68,13 +68,17 @@ def train_autokeras_model(df, target, mode=DEFAULT_MODE):
     logger.info(target)
     logger.info(training_df)
 
+    numeric_column_names = training_df.select_dtypes(include=[np.number]).columns.values.tolist()
+
     training_df = pd.get_dummies(training_df)
     logger.info("In train(): after getting dummies")
     logger.info(training_df)
     logger.info(training_df.columns.values.tolist())
 
+    categorical_dummy_column_names = [col for col in training_df.columns.values.tolist() if col not in numeric_column_names]
+
     trainer.fit(training_df, df[target], epochs=DEFAULT_EPOCHS)
-    return trainer.export_model(), training_df.columns.values.tolist()
+    return trainer.export_model(), categorical_dummy_column_names
 
 
 def get_preds_from_autokeras_model(df, model, target, all_column_names):
@@ -121,6 +125,7 @@ class AutokerasHandler(BaseMLEngine):
         logger.info(df.dtypes)
         logger.info(df.shape)
         logger.info(target)
+        args["training_data_column_count"] = len(df.columns) - 1 # subtract 1 for target
         model, args["data_column_names"] = train_autokeras_model(df, target)
 
         model.save(args["folder_path"])
@@ -137,6 +142,10 @@ class AutokerasHandler(BaseMLEngine):
         logger.info(df_to_predict.dtypes)
         logger.info(df.shape)
         logger.info("Before get predictions")
+        logger.info(f'predict col len: {len(df_to_predict.columns)} | training col len: {args["training_data_column_count"]}')
+        if len(df_to_predict.columns) != args["training_data_column_count"]:
+            # TODO: rephrase to something more user-friendly
+            raise Exception("All columns must be specified in the WHERE clause of the predict query")
         predictions = get_preds_from_autokeras_model(df_to_predict, model, args["target"], args["data_column_names"])
         df_to_predict[args["target"]] = predictions
         return df_to_predict
