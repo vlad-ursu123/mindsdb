@@ -119,6 +119,7 @@ class AutokerasHandler(BaseMLEngine):
         args = args['using']  # ignore the rest of the problem definition
         args["target"] = target
         args["folder_path"] = "autokeras"
+        args["training_df"] = df.to_json()
 
         logger.info("In create(): Before training")
         logger.info(df)
@@ -134,18 +135,23 @@ class AutokerasHandler(BaseMLEngine):
     
     def predict(self, df, args=None):
         args = self.model_storage.json_get("predict_args")
+        training_df = pd.read_json(args["training_df"])
+
         logger.info("Before load model")
         model = load_model(args["folder_path"], custom_objects=ak.CUSTOM_OBJECTS)
 
         df_to_predict = df.copy()
-        logger.info(df_to_predict)
-        logger.info(df_to_predict.dtypes)
-        logger.info(df.shape)
+        if "__mindsdb_row_id" in df_to_predict.columns.values.tolist():
+            df_to_predict = df_to_predict.drop("__mindsdb_row_id", axis=1)
+            
+        keys = list(df_to_predict.columns.values)
+        i1 = training_df.set_index(keys).index
+        i2 = df_to_predict.set_index(keys).index
+        filtered_df = training_df[i1.isin(i2)]
+        logger.info(filtered_df)
+        logger.info(filtered_df.shape)
         logger.info("Before get predictions")
-        logger.info(f'predict col len: {len(df_to_predict.columns)} | training col len: {args["training_data_column_count"]}')
-        if len(df_to_predict.columns) != args["training_data_column_count"]:
-            # TODO: rephrase to something more user-friendly
-            raise Exception("All columns must be specified in the WHERE clause of the predict query")
-        predictions = get_preds_from_autokeras_model(df_to_predict, model, args["target"], args["data_column_names"])
-        df_to_predict[args["target"]] = predictions
-        return df_to_predict
+
+        predictions = get_preds_from_autokeras_model(filtered_df, model, args["target"], args["data_column_names"])
+        filtered_df[args["target"]] = predictions
+        return filtered_df
