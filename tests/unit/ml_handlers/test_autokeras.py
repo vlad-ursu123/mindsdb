@@ -62,8 +62,7 @@ class TestAutokeras(BaseExecutorTest):
             """
            SELECT c
            FROM proj.modelx
-           WHERE a=1
-           AND b=2;
+           WHERE a=1;
         """
         )
         avg_c = pd.to_numeric(ret.c).mean()
@@ -102,7 +101,6 @@ class TestAutokeras(BaseExecutorTest):
            SELECT c
            FROM proj.modelx
            WHERE a=1
-           AND b=2
            AND d="odd";
         """
         )
@@ -111,7 +109,7 @@ class TestAutokeras(BaseExecutorTest):
         assert (avg_c > -5) and (avg_c < 5)
 
     @patch("mindsdb.integrations.handlers.postgres_handler.Handler")
-    def test_regression_error_on_incomplete_predict_query(self, mock_handler):
+    def test_regression_error_on_predict_query_too_strict(self, mock_handler):
 
         # dataset, string values
         df = pd.DataFrame(range(1, 50), columns=["a"])
@@ -142,10 +140,126 @@ class TestAutokeras(BaseExecutorTest):
                 """
             SELECT c
             FROM proj.modelx
-            WHERE a=1;
+            WHERE a=1
+            AND b=2;
             """
             )
             assert False
         except Exception:
             assert True
         
+    @patch("mindsdb.integrations.handlers.postgres_handler.Handler")
+    def test_classification_with_numerical_training(self, mock_handler):
+
+        # dataset, string values
+        df = pd.DataFrame(range(1, 50), columns=["a"])
+        df["b"] = 50 - df.a
+        df["c"] = round((df["a"] * 3 + df["b"]) / 50)
+        df["d"] = np.where(df.index % 2, "even", "odd")
+
+        self.set_handler(mock_handler, name="pg", tables={"df": df})
+
+        # create project
+        self.run_sql("create database proj")
+
+        # create predictor
+        self.run_sql(
+            """
+           create model proj.modelx
+           from pg (select * from df)
+           predict d
+           using 
+             engine='autokeras';
+        """
+        )
+        self.wait_predictor("proj", "modelx")
+
+        # run predict
+        ret = self.run_sql(
+            """
+           SELECT d
+           FROM proj.modelx
+           WHERE a=1;
+        """
+        )
+    
+        assert ret.d in ["even", "odd"]
+
+    @patch("mindsdb.integrations.handlers.postgres_handler.Handler")
+    def test_classification_with_categorical_training(self, mock_handler):
+
+        # dataset, string values
+        df = pd.DataFrame(range(1, 50), columns=["a"])
+        df["b"] = 50 - df.a
+        df["d"] = np.where(df.index % 2, "even", "odd")
+        df["e"] = np.where(df.index % 3, "not_prime", "kinda_prime")
+
+        self.set_handler(mock_handler, name="pg", tables={"df": df})
+
+        # create project
+        self.run_sql("create database proj")
+
+        # create predictor
+        self.run_sql(
+            """
+           create model proj.modelx
+           from pg (select * from df)
+           predict d
+           using 
+             engine='autokeras';
+        """
+        )
+        self.wait_predictor("proj", "modelx")
+
+        # run predict
+        ret = self.run_sql(
+            """
+           SELECT d
+           FROM proj.modelx
+           WHERE a=1
+           AND e="not_prime";
+        """
+        )
+
+        assert ret.d in ["even", "odd"]
+
+
+    @patch("mindsdb.integrations.handlers.postgres_handler.Handler")
+    def test_classification_error_on_predict_query_too_strict(self, mock_handler):
+
+        # dataset, string values
+        df = pd.DataFrame(range(1, 50), columns=["a"])
+        df["b"] = 50 - df.a
+        df["d"] = np.where(df.index % 2, "even", "odd")
+        df["e"] = np.where(df.index % 2 or df.index % 3, "not_prime", "kinda_prime")
+
+        self.set_handler(mock_handler, name="pg", tables={"df": df})
+
+        # create project
+        self.run_sql("create database proj")
+
+        # create predictor
+        self.run_sql(
+            """
+           create model proj.modelx
+           from pg (select * from df)
+           predict d
+           using 
+             engine='autokeras';
+        """
+        )
+        self.wait_predictor("proj", "modelx")
+
+        try:
+            # run predict
+            ret = self.run_sql(
+                """
+            SELECT d
+            FROM proj.modelx
+            WHERE a=1
+            AND b=2;
+            """
+            )
+            assert False
+        except Exception:
+            assert True

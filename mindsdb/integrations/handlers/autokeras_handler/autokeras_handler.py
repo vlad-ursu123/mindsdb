@@ -143,11 +143,14 @@ class AutokerasHandler(BaseMLEngine):
         df_to_predict = df.copy()
         if "__mindsdb_row_id" in df_to_predict.columns.values.tolist():
             df_to_predict = df_to_predict.drop("__mindsdb_row_id", axis=1)
-            
+
         keys = list(df_to_predict.columns.values)
         i1 = training_df.set_index(keys).index
         i2 = df_to_predict.set_index(keys).index
         filtered_df = training_df[i1.isin(i2)]
+        if filtered_df.empty:
+            # TODO: Rephrase the exception message in a more user-friendly way
+            raise Exception("The condition(s) in the WHERE clause filtered out all the data. Please refine these and try again")
         logger.info(filtered_df)
         logger.info(filtered_df.shape)
         logger.info("Before get predictions")
