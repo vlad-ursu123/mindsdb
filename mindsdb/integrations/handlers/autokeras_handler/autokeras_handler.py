@@ -3,6 +3,7 @@ import os
 import pandas as pd
 import numpy as np
 import autokeras as ak
+from sklearn import preprocessing
 from mindsdb.integrations.libs.base import BaseMLEngine
 from tensorflow.keras.models import load_model
 
@@ -52,14 +53,22 @@ logger = create_logger()
 os.environ["XLA_FLAGS"]="--xla_gpu_cuda_data_dir=/usr/lib/cuda"
 
 trainer_dict = {
-    "regression": ak.StructuredDataRegressor
+    "regression": ak.StructuredDataRegressor,
+    "classification": ak.StructuredDataClassifier
 }
 
-DEFAULT_MODE = "regression"
 DEFAULT_EPOCHS = 3
 DEFAULT_TRIALS = 3
 
-def train_autokeras_model(df, target, mode=DEFAULT_MODE):
+def train_autokeras_model(df, target):
+    if np.issubdtype(df[target].dtype, np.number):
+        mode = "regression"
+        y_train = df[target]
+    else:
+        mode = "classification"
+        lb = preprocessing.LabelBinarizer()
+        y_train = lb.fit_transform(df[target])
+
     training_df = df.drop(target, axis=1)
     trainer = trainer_dict[mode](overwrite=True, max_trials=DEFAULT_TRIALS)
 
@@ -77,7 +86,7 @@ def train_autokeras_model(df, target, mode=DEFAULT_MODE):
 
     categorical_dummy_column_names = [col for col in training_df.columns.values.tolist() if col not in numeric_column_names]
 
-    trainer.fit(training_df, df[target], epochs=DEFAULT_EPOCHS)
+    trainer.fit(training_df, y_train, epochs=DEFAULT_EPOCHS)
     return trainer.export_model(), categorical_dummy_column_names
 
 
@@ -156,5 +165,23 @@ class AutokerasHandler(BaseMLEngine):
         logger.info("Before get predictions")
 
         predictions = get_preds_from_autokeras_model(filtered_df, model, args["target"], args["data_column_names"])
+
+        if not np.issubdtype(filtered_df[args["target"]].dtype, np.number):
+            lb = preprocessing.LabelBinarizer()
+            lb.fit(filtered_df[args["target"]])
+            preds = lb.inverse_transform(predictions)
+            logger.info(f"raw preds: {predictions}")
+            # return [(preds[i], max(row)) for i, row in enumerate(x)]
+            filtered_df[args["target"]] = [(preds[i], max(row)) for i, row in enumerate(predictions)]
+            logger.info(f"This is your prediction df: {filtered_df}")
+            logger.info(f"This is your prediction alone: {filtered_df[args['target']]}")
+            pred_val = filtered_df[args["target"]].apply(lambda x: x[0])
+            pred_conf = filtered_df[args["target"]].apply(lambda x: x[1])
+            logger.info(f"Pred val: {pred_val} | pred conf: {pred_conf}")
+            logger.info(f"my hack: {filtered_df[args['target']][0][0]}")
+            return filtered_df
+
+
         filtered_df[args["target"]] = predictions
+        logger.info(f"This is your prediction df: {filtered_df}")
         return filtered_df

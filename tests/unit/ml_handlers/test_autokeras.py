@@ -222,8 +222,8 @@ class TestAutokeras(BaseExecutorTest):
            WHERE a=1;
         """
         )
-    
-        assert ret.d in ["even", "odd"]
+        assert ret.d[0][0] in ["even", "odd"]
+
 
     @patch("mindsdb.integrations.handlers.postgres_handler.Handler")
     def test_classification_with_categorical_training(self, mock_handler):
@@ -257,11 +257,11 @@ class TestAutokeras(BaseExecutorTest):
            SELECT d
            FROM proj.modelx
            WHERE a=1
-           AND e="not_prime";
+           AND e="kinda_prime";
         """
         )
 
-        assert ret.d in ["even", "odd"]
+        assert ret.d[0][0] in ["even", "odd"]
 
 
     @patch("mindsdb.integrations.handlers.postgres_handler.Handler")
@@ -271,7 +271,7 @@ class TestAutokeras(BaseExecutorTest):
         df = pd.DataFrame(range(1, 50), columns=["a"])
         df["b"] = 50 - df.a
         df["d"] = np.where(df.index % 2, "even", "odd")
-        df["e"] = np.where(df.index % 2 or df.index % 3, "not_prime", "kinda_prime")
+        df["e"] = np.where(df.index % 3, "not_prime", "kinda_prime")
 
         self.set_handler(mock_handler, name="pg", tables={"df": df})
 
