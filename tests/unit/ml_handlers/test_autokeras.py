@@ -2,6 +2,7 @@ import time
 from unittest.mock import patch
 import pandas as pd
 import numpy as np
+import pytest
 
 from mindsdb_sql import parse_sql
 
@@ -102,6 +103,45 @@ class TestAutokeras(BaseExecutorTest):
            FROM proj.modelx
            WHERE a=1
            AND d="odd";
+        """
+        )
+        avg_c = pd.to_numeric(ret.c).mean()
+        # value is around 1
+        assert (avg_c > -5) and (avg_c < 5)
+
+    @pytest.mark.skip("Threading issues not investigated yet")
+    @patch("mindsdb.integrations.handlers.postgres_handler.Handler")
+    def test_regression_with_bulk_predict_query(self, mock_handler):
+
+        # dataset, string values
+        df = pd.DataFrame(range(1, 50), columns=["a"])
+        df["b"] = 50 - df.a
+        df["c"] = round((df["a"] * 3 + df["b"]) / 50)
+        df["d"] = np.where(df.index % 2, "even", "odd")
+
+        self.set_handler(mock_handler, name="pg", tables={"df": df})
+
+        # create project
+        self.run_sql("create database proj")
+
+        # create predictor
+        self.run_sql(
+            """
+           create model proj.modelx
+           from pg (select * from df)
+           predict c
+           using 
+             engine='autokeras';
+        """
+        )
+        self.wait_predictor("proj", "modelx")
+
+        # run predict
+        ret = self.run_sql(
+            """
+            SELECT t.c, m.c, t.a, t.b
+            FROM pg.df as t 
+            JOIN proj.modelx as m limit 10;
         """
         )
         avg_c = pd.to_numeric(ret.c).mean()
