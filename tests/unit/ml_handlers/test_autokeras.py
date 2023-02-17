@@ -152,7 +152,7 @@ class TestAutokeras(BaseExecutorTest):
         # value is around 1
         assert (avg_c > -5) and (avg_c < 5)
 
-    @pytest.mark.skip("Threading issues not investigated yet")
+    @pytest.mark.skip("Can't figure out how to assert it")
     @patch("mindsdb.integrations.handlers.postgres_handler.Handler")
     def test_regression_with_bulk_predict_query(self, mock_handler):
 
