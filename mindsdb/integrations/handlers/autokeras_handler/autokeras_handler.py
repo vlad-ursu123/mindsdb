@@ -162,13 +162,17 @@ class AutokerasHandler(BaseMLEngine):
             raise Exception("The condition(s) in the WHERE clause filtered out all the data. Please refine these and try again")
         logger.info(filtered_df)
         logger.info(filtered_df.shape)
+        original_y = training_df[args["target"]]
         logger.info("Before get predictions")
+        logger.info(f"original_y:\n{original_y}")
 
         predictions = get_preds_from_autokeras_model(filtered_df, model, args["target"], args["data_column_names"])
-
-        if not np.issubdtype(filtered_df[args["target"]].dtype, np.number):
+        logger.info(f"These are the raw predictions: {predictions}")
+        if not np.issubdtype(original_y.dtype, np.number):
+            logger.info("INSIDE classifier predict")
             lb = preprocessing.LabelBinarizer()
-            lb.fit(filtered_df[args["target"]])
+            logger.info(f"original_y to fit:\n{original_y}")
+            lb.fit(original_y)
             preds = lb.inverse_transform(predictions)
             logger.info(f"raw preds: {predictions}")
             # return [(preds[i], max(row)) for i, row in enumerate(x)]
@@ -178,7 +182,8 @@ class AutokerasHandler(BaseMLEngine):
             pred_val = filtered_df[args["target"]].apply(lambda x: x[0])
             pred_conf = filtered_df[args["target"]].apply(lambda x: x[1])
             logger.info(f"Pred val: {pred_val} | pred conf: {pred_conf}")
-            logger.info(f"my hack: {filtered_df[args['target']][0][0]}")
+            # for i, row in enumerate(filtered_df[args['target']]):
+            #     logger.info(f'my hack: {filtered_df[args["target"]][i][0] in ["even", "odd"]}')
             return filtered_df
 
 
